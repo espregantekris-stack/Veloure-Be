@@ -6,6 +6,7 @@ import { addToCart } from "../../lib/cart.js";
 
 function Home() {
   const [smallList, setSmallList] = useState([]);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [videoIndex, setVideoIndex] = useState(0);
   const [isVideoFading, setIsVideoFading] = useState(false);
   const [currentReviewIndex, setCurrentReviewIndex] = useState(0);
@@ -76,6 +77,24 @@ function Home() {
     load();
   }, []);
 
+  useEffect(() => {
+    const init = async () => {
+      const { data } = await supabase.auth.getSession();
+      const role = data?.session?.user?.user_metadata?.role ?? "customer";
+      setIsAdmin(role === "admin");
+    };
+
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+      const role = session?.user?.user_metadata?.role ?? "customer";
+      setIsAdmin(role === "admin");
+    });
+
+    init();
+    return () => {
+      sub?.subscription?.unsubscribe();
+    };
+  }, []);
+
   const skincareList = smallList.filter(
     (item) =>
       (item.category || "").toLowerCase() === "skincare" && item.is_featured,
@@ -123,7 +142,9 @@ function Home() {
       {items.length > 0 ? (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
           {items.slice(0, 8).map((item) => {
-            const isSoldOut = Number(item.stock ?? 0) <= 0;
+            const hasStockValue = item.stock !== null && item.stock !== undefined;
+            const stockValue = hasStockValue ? Math.max(0, Number(item.stock || 0)) : null;
+            const isSoldOut = hasStockValue && stockValue <= 0;
             return (
               <article
                 key={item.id}
@@ -164,15 +185,17 @@ function Home() {
                     {item.description || "Clean formula with high-performance results."}
                   </p>
                   <p className="text-[11px] font-black uppercase tracking-[0.16em] text-black/60">
-                    Stock: {isSoldOut ? "Sold out" : item.stock ?? 0}
+                    Stock: {isSoldOut ? "Sold out" : hasStockValue ? stockValue : "Available"}
                   </p>
-                  <MotionButton
-                    className="w-full rounded-md border border-black bg-white px-4 py-2 text-xs font-black uppercase tracking-[0.12em] text-black transition hover:bg-black hover:text-white disabled:cursor-not-allowed disabled:border-[#b7b7b7] disabled:bg-[#d9d9d9] disabled:text-[#666] disabled:hover:bg-[#d9d9d9] disabled:hover:text-[#666]"
-                    onClick={() => handleAddToCart(item, 1)}
-                    disabled={isSoldOut}
-                  >
-                    {isSoldOut ? "Sold out" : "Add to Cart"}
-                  </MotionButton>
+                  {!isAdmin && (
+                    <MotionButton
+                      className="w-full rounded-md border border-black bg-white px-4 py-2 text-xs font-black uppercase tracking-[0.12em] text-black transition hover:bg-black hover:text-white disabled:cursor-not-allowed disabled:border-[#b7b7b7] disabled:bg-[#d9d9d9] disabled:text-[#666] disabled:hover:bg-[#d9d9d9] disabled:hover:text-[#666]"
+                      onClick={() => handleAddToCart(item, 1)}
+                      disabled={isSoldOut}
+                    >
+                      {isSoldOut ? "Sold out" : "Add to Cart"}
+                    </MotionButton>
+                  )}
                 </div>
               </article>
             );

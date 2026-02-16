@@ -19,13 +19,19 @@ function Profile() {
         return
       }
       const role = user.user_metadata?.role ?? 'customer'
-      setIsAdmin(role === 'admin')
+      const admin = role === 'admin'
+      setIsAdmin(admin)
 
-      const { data: orderRows, error: ordersError } = await supabase
+      let ordersQuery = supabase
         .from('orders')
         .select('*')
-        .eq('user_id', user.id)
         .order('created_at', { ascending: false })
+
+      if (!admin) {
+        ordersQuery = ordersQuery.eq('user_id', user.id)
+      }
+
+      const { data: orderRows, error: ordersError } = await ordersQuery
 
       if (ordersError) {
         setStatus(ordersError.message)
@@ -56,8 +62,14 @@ function Profile() {
 
       const mappedOrders = orderList.map((order) => ({
         id: order.id,
+        userId: order.user_id ?? '',
         date: order.created_at ?? order.date ?? new Date().toISOString(),
         total: Number(order.total || 0),
+        subtotal: Number(order.subtotal || 0),
+        shippingFee: Number(order.shipping_fee || 0),
+        address: order.address ?? '',
+        notes: order.notes ?? '',
+        billing: order.billing ?? 'standard',
         items: itemsByOrderId[order.id] ?? (Array.isArray(order.items) ? order.items : []),
       }))
 
@@ -76,9 +88,13 @@ function Profile() {
     <section className="space-y-8">
       <div className="border border-[var(--ink)] bg-white px-6 py-8 md:px-10">
         <p className="text-[11px] font-black uppercase tracking-[0.3em] text-[var(--ink)]/65">Profile</p>
-        <h1 className="mt-3 text-4xl font-black uppercase leading-none md:text-5xl">Your purchase history</h1>
+        <h1 className="mt-3 text-4xl font-black uppercase leading-none md:text-5xl">
+          {isAdmin ? 'Customer receipts' : 'Your purchase history'}
+        </h1>
         <p className="mt-3 max-w-2xl text-sm leading-6 text-[var(--ink)]/75">
-          Review your past orders and keep track of your ritual essentials.
+          {isAdmin
+            ? 'Review every customer order receipt in one place.'
+            : 'Review your past orders and keep track of your ritual essentials.'}
         </p>
 
         <div className="mt-6 flex flex-wrap gap-3">
@@ -108,7 +124,9 @@ function Profile() {
 
         {orders.length === 0 ? (
           <div className="border border-[var(--ink)] bg-white p-6 text-sm text-[var(--ink)]/70">
-            No purchases yet. Complete a checkout to see your history here.
+            {isAdmin
+              ? 'No customer receipts found yet.'
+              : 'No purchases yet. Complete a checkout to see your history here.'}
           </div>
         ) : (
           orders.map((order) => (
@@ -119,6 +137,15 @@ function Profile() {
                   {new Date(order.date).toLocaleDateString()}
                 </p>
               </div>
+
+              {isAdmin && (
+                <div className="mt-3 grid gap-2 border-b border-[var(--ink)] pb-3 text-xs text-[var(--ink)]/75 md:grid-cols-2">
+                  <p className="font-black uppercase tracking-[0.16em]">Customer ID: {order.userId}</p>
+                  <p className="font-black uppercase tracking-[0.16em]">Billing: {order.billing}</p>
+                  <p className="md:col-span-2">Address: {order.address || 'N/A'}</p>
+                  {order.notes && <p className="md:col-span-2">Notes: {order.notes}</p>}
+                </div>
+              )}
 
               <div className="mt-4 space-y-2 text-sm">
                 {order.items.map((item) => (
@@ -131,9 +158,23 @@ function Profile() {
                 ))}
               </div>
 
-              <div className="mt-4 flex justify-between border-t border-[var(--ink)] pt-3 text-sm font-black">
-                <span>Total</span>
-                <span>PHP {Number(order.total || 0).toFixed(2)}</span>
+              <div className="mt-4 space-y-2 border-t border-[var(--ink)] pt-3 text-sm">
+                {isAdmin && (
+                  <>
+                    <div className="flex justify-between">
+                      <span>Subtotal</span>
+                      <span>PHP {Number(order.subtotal || 0).toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Shipping</span>
+                      <span>PHP {Number(order.shippingFee || 0).toFixed(2)}</span>
+                    </div>
+                  </>
+                )}
+                <div className="flex justify-between font-black">
+                  <span>Total</span>
+                  <span>PHP {Number(order.total || 0).toFixed(2)}</span>
+                </div>
               </div>
             </article>
           ))

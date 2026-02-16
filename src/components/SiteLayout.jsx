@@ -12,6 +12,7 @@ const linkClass = ({ isActive }) =>
 
 function SiteLayout() {
   const [signedIn, setSignedIn] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [cartCount, setCartCount] = useState(0);
   const [cartItems, setCartItems] = useState([]);
   const [isCartOpen, setIsCartOpen] = useState(false);
@@ -28,7 +29,12 @@ function SiteLayout() {
   const navigate = useNavigate();
   const searchInputRef = useRef(null);
   const addedToCartTimerRef = useRef(null);
+  const isAdminRef = useRef(false);
   const isHomePage = location.pathname === "/";
+
+  useEffect(() => {
+    isAdminRef.current = isAdmin;
+  }, [isAdmin]);
 
   const updateCartCount = () => {
     const items = getCart();
@@ -56,16 +62,20 @@ function SiteLayout() {
   useEffect(() => {
     const init = async () => {
       const { data } = await supabase.auth.getSession();
-      setSignedIn(!!data?.session?.user);
+      const user = data?.session?.user;
+      setSignedIn(!!user);
+      setIsAdmin((user?.user_metadata?.role ?? "customer") === "admin");
       updateCartCount();
     };
 
     const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSignedIn(!!session?.user);
+      const user = session?.user;
+      setSignedIn(!!user);
+      setIsAdmin((user?.user_metadata?.role ?? "customer") === "admin");
     });
     const onCartAdded = (event) => {
       const detail = event?.detail ?? {};
-      if (detail.source === "product-detail") return;
+      if (detail.source === "product-detail" || isAdminRef.current) return;
       setAddedToCartModal({
         open: true,
         name: detail.name ?? "Item",
@@ -139,6 +149,12 @@ function SiteLayout() {
     setIsCartOpen(false);
   }, [location.pathname]);
 
+  useEffect(() => {
+    if (isAdmin) {
+      setIsCartOpen(false);
+    }
+  }, [isAdmin]);
+
   return (
     <div className="flex min-h-screen flex-col bg-[var(--cream)] text-[var(--ink)]">
       <header className="sticky top-0 z-50 border-b border-[var(--ink)]/10 bg-white/40 px-6 py-6 backdrop-blur-md transition-all duration-300 hover:bg-white/60 md:px-16">
@@ -206,29 +222,31 @@ function SiteLayout() {
                 </svg>
               </Link>
             )}
-            <button
-              type="button"
-              onClick={() => setIsCartOpen(true)}
-              className="relative rounded-full border border-[var(--ink)]/10 p-2 transition hover:text-[var(--gold)]"
-              aria-label="Cart"
-            >
-              <svg
-                width="18"
-                height="18"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.6"
+            {!isAdmin && (
+              <button
+                type="button"
+                onClick={() => setIsCartOpen(true)}
+                className="relative rounded-full border border-[var(--ink)]/10 p-2 transition hover:text-[var(--gold)]"
+                aria-label="Cart"
               >
-                <path d="M6 6h15l-2 9H8L6 6Z" />
-                <path d="M6 6 5 3H2" />
-              </svg>
-              {cartCount > 0 && (
-                <span className="absolute -right-2 -top-2 flex h-5 w-5 items-center justify-center rounded-full bg-[var(--gold)] text-[10px] font-semibold text-white">
-                  {cartCount}
-                </span>
-              )}
-            </button>
+                <svg
+                  width="18"
+                  height="18"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                >
+                  <path d="M6 6h15l-2 9H8L6 6Z" />
+                  <path d="M6 6 5 3H2" />
+                </svg>
+                {cartCount > 0 && (
+                  <span className="absolute -right-2 -top-2 flex h-5 w-5 items-center justify-center rounded-full bg-[var(--gold)] text-[10px] font-semibold text-white">
+                    {cartCount}
+                  </span>
+                )}
+              </button>
+            )}
           </div>
         </nav>
       </header>
@@ -304,7 +322,7 @@ function SiteLayout() {
         </div>
       )}
 
-      {isCartOpen && (
+      {!isAdmin && isCartOpen && (
         <div className="fixed inset-0 z-[70]">
           <button
             type="button"

@@ -14,23 +14,29 @@ function Product() {
   const [reviewText, setReviewText] = useState('')
   const [checkedAuth, setCheckedAuth] = useState(false)
   const [signedIn, setSignedIn] = useState(false)
+  const [isAdmin, setIsAdmin] = useState(false)
   const [qty, setQty] = useState(1)
   const [openSection, setOpenSection] = useState('how')
   const [isZoomOpen, setIsZoomOpen] = useState(false)
   const [addedModalOpen, setAddedModalOpen] = useState(false)
   const [lastAddedQty, setLastAddedQty] = useState(1)
   const navigate = useNavigate()
-  const isSoldOut = Number(product?.stock ?? 0) <= 0
+  const hasStockValue = product?.stock !== null && product?.stock !== undefined
+  const stockValue = hasStockValue ? Math.max(0, Number(product?.stock || 0)) : null
+  const isSoldOut = hasStockValue && stockValue <= 0
 
   useEffect(() => {
     const load = async () => {
       const { data: sessionData } = await supabase.auth.getSession()
       if (!sessionData?.session?.user) {
         setSignedIn(false)
+        setIsAdmin(false)
         setCheckedAuth(true)
         return
       }
       setSignedIn(true)
+      const role = sessionData.session.user.user_metadata?.role ?? 'customer'
+      setIsAdmin(role === 'admin')
       const { data } = await supabase
         .from('products')
         .select('id,name,category,description,price,image_url,stock')
@@ -77,15 +83,15 @@ function Product() {
   }, [])
 
   useEffect(() => {
-    const stock = Math.max(0, Number(product?.stock || 0))
-    if (stock === 0) {
+    if (!hasStockValue) return
+    if (stockValue === 0) {
       setQty(1)
       return
     }
-    if (qty > stock) {
-      setQty(stock)
+    if (qty > stockValue) {
+      setQty(stockValue)
     }
-  }, [product?.stock, qty])
+  }, [hasStockValue, stockValue, qty])
 
   const sections = useMemo(
     () => [
@@ -215,58 +221,70 @@ function Product() {
             </div>
             <div>
               <p className="text-[11px] font-black uppercase tracking-[0.22em] text-[var(--ink)]/60">Stock</p>
-              <p className="mt-1 text-2xl font-black">{isSoldOut ? 'Sold out' : product.stock ?? 0}</p>
+              <p className="mt-1 text-2xl font-black">{isSoldOut ? 'Sold out' : hasStockValue ? stockValue : 'Available'}</p>
             </div>
           </div>
 
-          <div>
-            <p className="text-[11px] font-black uppercase tracking-[0.24em] text-[var(--ink)]/70">Quantity</p>
-            <div className="mt-2 inline-flex items-center border border-[var(--ink)]">
-              <button
-                type="button"
-                onClick={() => setQty((prev) => Math.max(1, prev - 1))}
-                className="h-10 w-11 text-lg disabled:opacity-40"
+          {!isAdmin && (
+            <>
+              <div>
+                <p className="text-[11px] font-black uppercase tracking-[0.24em] text-[var(--ink)]/70">Quantity</p>
+                <div className="mt-2 inline-flex items-center border border-[var(--ink)]">
+                  <button
+                    type="button"
+                    onClick={() => setQty((prev) => Math.max(1, prev - 1))}
+                    className="h-10 w-11 text-lg disabled:opacity-40"
+                    disabled={isSoldOut}
+                  >
+                    -
+                  </button>
+                  <span className="flex h-10 w-14 items-center justify-center border-x border-[var(--ink)] text-lg font-black">
+                    {qty}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setQty((prev) => (hasStockValue ? Math.min(stockValue, prev + 1) : prev + 1))}
+                    className="h-10 w-11 text-lg disabled:opacity-40"
+                    disabled={isSoldOut || (hasStockValue && qty >= stockValue)}
+                  >
+                    +
+                  </button>
+                </div>
+              </div>
+
+              <MotionButton
+                className="w-full border border-[var(--ink)] bg-white px-6 py-3 text-xl font-black uppercase tracking-[0.06em] disabled:cursor-not-allowed disabled:border-[#b7b7b7] disabled:bg-[#d9d9d9] disabled:text-[#666] disabled:hover:bg-[#d9d9d9]"
+                onClick={() => handleAddCurrentProduct(false)}
                 disabled={isSoldOut}
               >
-                -
-              </button>
-              <span className="flex h-10 w-14 items-center justify-center border-x border-[var(--ink)] text-lg font-black">
-                {qty}
-              </span>
-              <button
-                type="button"
-                onClick={() => setQty((prev) => Math.min(Number(product.stock || 0), prev + 1))}
-                className="h-10 w-11 text-lg disabled:opacity-40"
-                disabled={isSoldOut || qty >= Number(product.stock || 0)}
-              >
-                +
-              </button>
-            </div>
-          </div>
+                {isSoldOut ? 'Sold out' : 'Add to bag'}
+              </MotionButton>
 
-          <MotionButton
-            className="w-full border border-[var(--ink)] bg-white px-6 py-3 text-xl font-black uppercase tracking-[0.06em] disabled:cursor-not-allowed disabled:border-[#b7b7b7] disabled:bg-[#d9d9d9] disabled:text-[#666] disabled:hover:bg-[#d9d9d9]"
-            onClick={() => handleAddCurrentProduct(false)}
-            disabled={isSoldOut}
-          >
-            {isSoldOut ? 'Sold out' : 'Add to bag'}
-          </MotionButton>
-
-          <div className="grid gap-3 sm:grid-cols-2">
-            <MotionButton
-              className="border border-[var(--ink)] bg-[var(--ink)] px-6 py-3 text-sm font-black uppercase tracking-[0.12em] text-white disabled:cursor-not-allowed disabled:border-[#b7b7b7] disabled:bg-[#d9d9d9] disabled:text-[#666] disabled:hover:bg-[#d9d9d9]"
-              onClick={() => handleAddCurrentProduct(true)}
-              disabled={isSoldOut}
-            >
-              {isSoldOut ? 'Sold out' : 'Buy now'}
-            </MotionButton>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <MotionButton
+                  className="border border-[var(--ink)] bg-[var(--ink)] px-6 py-3 text-sm font-black uppercase tracking-[0.12em] text-white disabled:cursor-not-allowed disabled:border-[#b7b7b7] disabled:bg-[#d9d9d9] disabled:text-[#666] disabled:hover:bg-[#d9d9d9]"
+                  onClick={() => handleAddCurrentProduct(true)}
+                  disabled={isSoldOut}
+                >
+                  {isSoldOut ? 'Sold out' : 'Buy now'}
+                </MotionButton>
+                <Link
+                  to="/products"
+                  className="flex items-center justify-center border border-[var(--ink)] px-6 py-3 text-sm font-black uppercase tracking-[0.12em]"
+                >
+                  Back to products
+                </Link>
+              </div>
+            </>
+          )}
+          {isAdmin && (
             <Link
               to="/products"
               className="flex items-center justify-center border border-[var(--ink)] px-6 py-3 text-sm font-black uppercase tracking-[0.12em]"
             >
               Back to products
             </Link>
-          </div>
+          )}
 
           <div className="grid grid-cols-1 gap-2 text-sm md:grid-cols-3">
             <p>Preservative-safe</p>
@@ -402,7 +420,9 @@ function Product() {
 
         <div className="grid gap-4 md:grid-cols-3">
           {recommendations.map((item) => {
-            const isRecommendationSoldOut = Number(item.stock ?? 0) <= 0
+            const hasRecommendationStock = item.stock !== null && item.stock !== undefined
+            const recommendationStockValue = hasRecommendationStock ? Math.max(0, Number(item.stock || 0)) : null
+            const isRecommendationSoldOut = hasRecommendationStock && recommendationStockValue <= 0
             return (
               <article key={item.id} className="flex h-full flex-col border border-[var(--ink)] bg-white p-4">
                 <Link to={`/product/${item.slug}`} className="block">
@@ -418,7 +438,7 @@ function Product() {
                 </Link>
                 <p className="mt-1 text-sm">PHP {Number(item.price || 0).toFixed(2)}</p>
                 <p className="mt-1 text-[11px] font-black uppercase tracking-[0.16em] text-[var(--ink)]/60">
-                  Stock: {isRecommendationSoldOut ? 'Sold out' : item.stock ?? 0}
+                  Stock: {isRecommendationSoldOut ? 'Sold out' : hasRecommendationStock ? recommendationStockValue : 'Available'}
                 </p>
                 <Link
                   to={`/product/${item.slug}`}
@@ -426,13 +446,15 @@ function Product() {
                 >
                   See more details
                 </Link>
-                <MotionButton
-                  className="mt-auto w-full border border-[var(--ink)] bg-white px-4 py-2 text-[11px] font-black uppercase tracking-[0.16em] transition hover:bg-[var(--ink)] hover:text-white disabled:cursor-not-allowed disabled:border-[#b7b7b7] disabled:bg-[#d9d9d9] disabled:text-[#666] disabled:hover:bg-[#d9d9d9] disabled:hover:text-[#666]"
-                  onClick={() => handleAddRecommendation(item)}
-                  disabled={isRecommendationSoldOut}
-                >
-                  {isRecommendationSoldOut ? 'Sold out' : 'Add to bag'}
-                </MotionButton>
+                {!isAdmin && (
+                  <MotionButton
+                    className="mt-auto w-full border border-[var(--ink)] bg-white px-4 py-2 text-[11px] font-black uppercase tracking-[0.16em] transition hover:bg-[var(--ink)] hover:text-white disabled:cursor-not-allowed disabled:border-[#b7b7b7] disabled:bg-[#d9d9d9] disabled:text-[#666] disabled:hover:bg-[#d9d9d9] disabled:hover:text-[#666]"
+                    onClick={() => handleAddRecommendation(item)}
+                    disabled={isRecommendationSoldOut}
+                  >
+                    {isRecommendationSoldOut ? 'Sold out' : 'Add to bag'}
+                  </MotionButton>
+                )}
               </article>
             )
           })}

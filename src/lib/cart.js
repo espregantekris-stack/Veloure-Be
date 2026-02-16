@@ -3,6 +3,9 @@ import { supabase } from './supabase.js'
 const storageKey = 'veloure_cart'
 const maxStockRetries = 3
 
+const stockWriteBlocked = (message = '') =>
+  /permission|not allowed|row-level security|rls|jwt|auth|policy/i.test(String(message))
+
 export const getCart = () => {
   if (typeof window === 'undefined') return []
   const raw = window.localStorage.getItem(storageKey)
@@ -102,9 +105,74 @@ const releaseStock = async (productId, releaseQty) => {
 
 export const addToCart = async (product, qty = 1, options = {}) => {
   const wantedQty = toPositiveInt(qty, 1)
-  const productStock = Math.max(0, Number(product?.stock || 0))
+  const hasProductStock = product?.stock !== null && product?.stock !== undefined
+  const productStock = hasProductStock
+    ? Math.max(0, Number(product?.stock || 0))
+    : wantedQty
+  const addLocally = (remaining, addQty, error = '') => {
+    const items = getCart()
+    const existing = items.find((item) => item.id === product.id)
+    if (existing) {
+      existing.qty += addQty
+      existing.stock = Math.max(0, Number(remaining || 0))
+    } else {
+      items.push({
+        ...product,
+        qty: addQty,
+        stock: Math.max(0, Number(remaining || 0)),
+      })
+    }
+
+    saveCart(items)
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(
+        new CustomEvent('cartAdded', {
+          detail: {
+            id: product.id,
+            name: product.name,
+            qty: addQty,
+            source: options.source ?? '',
+          },
+        })
+      )
+    }
+
+    return {
+      items,
+      addedQty: addQty,
+      remainingStock: Math.max(0, Number(remaining || 0)),
+      error,
+    }
+  }
+
+  // If stock is not tracked for this product, allow local cart additions.
+  if (!hasProductStock) {
+    return addLocally(wantedQty, wantedQty, '')
+  }
+
   const reserve = await reserveStock(product.id, wantedQty)
   if (reserve.error || reserve.reserved <= 0) {
+    if (reserve.error) {
+      // Fallback for clients that can read products but cannot update stock rows.
+      const items = getCart()
+      const existing = items.find((item) => item.id === product.id)
+      const localRemaining = existing
+        ? Math.max(0, Number(existing.stock ?? productStock))
+        : productStock
+      const localAddQty = Math.min(localRemaining, wantedQty)
+
+      if (localAddQty <= 0) {
+        return {
+          items,
+          addedQty: 0,
+          remainingStock: localRemaining,
+          error: stockWriteBlocked(reserve.error) ? '' : reserve.error,
+        }
+      }
+
+      return addLocally(Math.max(0, localRemaining - localAddQty), localAddQty, '')
+    }
+
     const safeRemainingStock =
       reserve.error && reserve.stock === 0
         ? productStock

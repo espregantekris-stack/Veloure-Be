@@ -1,14 +1,37 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { getCart, removeFromCart, updateQty } from '../../lib/cart.js'
+import { supabase } from '../../lib/supabase.js'
 import MotionButton from '../../components/MotionButton.jsx'
 
 function Cart() {
   const [items, setItems] = useState([])
+  const [isAdmin, setIsAdmin] = useState(false)
+  const [checkedRole, setCheckedRole] = useState(false)
   const navigate = useNavigate()
 
   useEffect(() => {
     setItems(getCart())
+  }, [])
+
+  useEffect(() => {
+    const init = async () => {
+      const { data } = await supabase.auth.getSession()
+      const role = data?.session?.user?.user_metadata?.role ?? 'customer'
+      setIsAdmin(role === 'admin')
+      setCheckedRole(true)
+    }
+
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+      const role = session?.user?.user_metadata?.role ?? 'customer'
+      setIsAdmin(role === 'admin')
+      setCheckedRole(true)
+    })
+
+    init()
+    return () => {
+      sub?.subscription?.unsubscribe()
+    }
   }, [])
 
   const handleRemove = async (id) => {
@@ -26,8 +49,34 @@ function Cart() {
   const subtotal = items.reduce((sum, item) => sum + Number(item.price || 0) * item.qty, 0)
 
   const handleCheckout = () => {
-    if (items.length === 0) return
+    if (items.length === 0 || isAdmin) return
     navigate('/checkout-list')
+  }
+
+  if (!checkedRole) {
+    return null
+  }
+
+  if (isAdmin) {
+    return (
+      <section className="space-y-6">
+        <div className="border border-[var(--ink)] bg-white px-6 py-8 md:px-10">
+          <p className="text-[11px] font-black uppercase tracking-[0.3em] text-[var(--ink)]/65">Cart</p>
+          <h1 className="mt-3 text-4xl font-black uppercase leading-none md:text-5xl">
+            Cart is disabled for admin
+          </h1>
+          <p className="mt-3 max-w-2xl text-sm leading-6 text-[var(--ink)]/75">
+            Admin accounts can browse products and manage inventory, but checkout actions are hidden.
+          </p>
+        </div>
+        <Link
+          to="/products"
+          className="inline-block border border-[var(--ink)] px-6 py-3 text-sm font-black uppercase tracking-[0.12em]"
+        >
+          Back to products
+        </Link>
+      </section>
+    )
   }
 
   return (

@@ -7,6 +7,7 @@ import { motion } from 'framer-motion'
 
 function Shop() {
   const [products, setProducts] = useState([])
+  const [isAdmin, setIsAdmin] = useState(false)
   const [category, setCategory] = useState('All')
   const [sort, setSort] = useState('recent')
 
@@ -19,6 +20,24 @@ function Shop() {
       setProducts(data ?? [])
     }
     load()
+  }, [])
+
+  useEffect(() => {
+    const init = async () => {
+      const { data } = await supabase.auth.getSession()
+      const role = data?.session?.user?.user_metadata?.role ?? 'customer'
+      setIsAdmin(role === 'admin')
+    }
+
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+      const role = session?.user?.user_metadata?.role ?? 'customer'
+      setIsAdmin(role === 'admin')
+    })
+
+    init()
+    return () => {
+      sub?.subscription?.unsubscribe()
+    }
   }, [])
 
   const categories = useMemo(() => {
@@ -114,7 +133,9 @@ function Shop() {
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         {visible.map((item, index) => {
-          const isSoldOut = Number(item.stock ?? 0) <= 0
+          const hasStockValue = item.stock !== null && item.stock !== undefined
+          const stockValue = hasStockValue ? Math.max(0, Number(item.stock || 0)) : null
+          const isSoldOut = hasStockValue && stockValue <= 0
           return (
             <motion.article
               key={item.id}
@@ -143,17 +164,19 @@ function Shop() {
                 {item.description || 'Clean formula with high-performance results.'}
               </p>
               <p className="mt-2 text-[11px] font-black uppercase tracking-[0.18em] text-[var(--ink)]/60">
-                Stock: {isSoldOut ? 'Sold out' : item.stock ?? 0}
+                Stock: {isSoldOut ? 'Sold out' : hasStockValue ? stockValue : 'Available'}
               </p>
               <div className="mt-4 flex items-center justify-between gap-3">
                 <span className="text-base font-black">PHP {Number(item.price || 0).toFixed(2)}</span>
-                <MotionButton
-                  className="border border-[var(--ink)] bg-white px-3 py-2 text-[11px] font-black uppercase tracking-[0.16em] transition hover:bg-[var(--ink)] hover:text-white disabled:cursor-not-allowed disabled:border-[#b7b7b7] disabled:bg-[#d9d9d9] disabled:text-[#666] disabled:hover:bg-[#d9d9d9] disabled:hover:text-[#666]"
-                  onClick={() => handleAddToCart(item, 1)}
-                  disabled={isSoldOut}
-                >
-                  {isSoldOut ? 'Sold out' : 'Add to bag'}
-                </MotionButton>
+                {!isAdmin && (
+                  <MotionButton
+                    className="border border-[var(--ink)] bg-white px-3 py-2 text-[11px] font-black uppercase tracking-[0.16em] transition hover:bg-[var(--ink)] hover:text-white disabled:cursor-not-allowed disabled:border-[#b7b7b7] disabled:bg-[#d9d9d9] disabled:text-[#666] disabled:hover:bg-[#d9d9d9] disabled:hover:text-[#666]"
+                    onClick={() => handleAddToCart(item, 1)}
+                    disabled={isSoldOut}
+                  >
+                    {isSoldOut ? 'Sold out' : 'Add to bag'}
+                  </MotionButton>
+                )}
               </div>
             </motion.article>
           )
