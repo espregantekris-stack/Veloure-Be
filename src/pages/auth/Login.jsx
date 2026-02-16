@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase.js'
 import MotionButton from '../../components/MotionButton.jsx'
@@ -9,7 +9,32 @@ function Login() {
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [googleLoading, setGoogleLoading] = useState(false)
   const navigate = useNavigate()
+
+  useEffect(() => {
+    const routeUserFromSession = async () => {
+      const { data } = await supabase.auth.getSession()
+      const session = data?.session
+      if (session?.user) {
+        const role = session.user.user_metadata?.role ?? 'customer'
+        navigate(role === 'admin' ? '/admin' : '/dashboard', { replace: true })
+      }
+    }
+
+    routeUserFromSession()
+
+    const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session?.user) {
+        const role = session.user.user_metadata?.role ?? 'customer'
+        navigate(role === 'admin' ? '/admin' : '/dashboard', { replace: true })
+      }
+    })
+
+    return () => {
+      authListener.subscription.unsubscribe()
+    }
+  }, [navigate])
 
   const handleSubmit = async (event) => {
     event.preventDefault()
@@ -30,6 +55,21 @@ function Login() {
     const role = data?.user?.user_metadata?.role ?? 'customer'
     setLoading(false)
     navigate(role === 'admin' ? '/admin' : '/dashboard')
+  }
+
+  const handleGoogleSignIn = async () => {
+    setError('')
+    setGoogleLoading(true)
+    const redirectTo = `${window.location.origin}/login`
+    const { error: googleError } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: { redirectTo },
+    })
+
+    if (googleError) {
+      setGoogleLoading(false)
+      setError(googleError.message)
+    }
   }
 
   return (
@@ -79,6 +119,15 @@ function Login() {
             >
               {loading ? 'Signing in...' : 'Submit'}
             </MotionButton>
+
+            <button
+              type="button"
+              onClick={handleGoogleSignIn}
+              disabled={googleLoading}
+              className="w-full border border-[var(--ink)] bg-white px-6 py-3 text-sm font-black uppercase tracking-[0.16em] text-[var(--ink)] disabled:opacity-60"
+            >
+              {googleLoading ? 'Redirecting to Google...' : 'Continue with Google'}
+            </button>
 
             <Link
               to="/signup"
